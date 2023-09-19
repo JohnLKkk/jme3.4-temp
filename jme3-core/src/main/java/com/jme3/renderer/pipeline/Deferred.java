@@ -35,6 +35,11 @@ import com.jme3.ui.Picture;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * The Deferred class implements a standard deferred shading pipeline, with some allowed optimizations (such as culling PointLights), but considering the Overdraw issues brought by multiple draw calls, it is not enabled here, while preserving some optimization code.<br/>
+ * @author JohnKkk
+ * @update 2023年9月19日22点33分
+ */
 public class Deferred extends RenderPipeline{
     private static AssetManager assetManager;
 
