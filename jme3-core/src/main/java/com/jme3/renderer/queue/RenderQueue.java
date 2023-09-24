@@ -34,6 +34,7 @@ package com.jme3.renderer.queue;
 import com.jme3.post.SceneProcessor;
 import com.jme3.renderer.Camera;
 import com.jme3.renderer.RenderManager;
+import com.jme3.renderer.renderPass.IRenderGeometry;
 import com.jme3.scene.Geometry;
 import com.jme3.scene.Spatial;
 
@@ -267,27 +268,43 @@ public class RenderQueue {
     }
 
     private void renderGeometryList(GeometryList list, RenderManager rm, Camera cam, boolean clear) {
-        list.setCamera(cam); // select camera for sorting
-        list.sort();
-        tempList.clear();
-        for (int i = 0; i < list.size(); i++) {
-            Geometry obj = list.get(i);
-            assert obj != null;
-            // Check if it is actually rendered
-            if(!rm.submitRenderGeometry(obj)){
-                tempList.add(obj);
-            }
-            obj.queueDistance = Float.NEGATIVE_INFINITY;
-        }
-        if (clear) {
-            list.clear();
-            // BEGIN-JME3@JohnKkk以便进行后续RendererPath渲染
-            if(tempList.size() > 0){
-                for(int i = 0;i < tempList.size();i++){
-                    list.add(tempList.get(i));
+        IRenderGeometry renderGeometryHandler = rm.getRenderGeometryHandler();
+        if(renderGeometryHandler != null){
+            list.setCamera(cam); // select camera for sorting
+            list.sort();
+            tempList.clear();
+            for (int i = 0; i < list.size(); i++) {
+                Geometry obj = list.get(i);
+                assert obj != null;
+                // Check if it is actually rendered
+                if(!renderGeometryHandler.drawGeometry(rm, obj)){
+                    tempList.add(obj);
                 }
+                obj.queueDistance = Float.NEGATIVE_INFINITY;
             }
-            // END-JME3
+            if (clear) {
+                list.clear();
+                // BEGIN-JME3@JohnKkk以便进行后续RendererPath渲染
+                if(tempList.size() > 0){
+                    for(int i = 0;i < tempList.size();i++){
+                        list.add(tempList.get(i));
+                    }
+                }
+                // END-JME3
+            }
+        }
+        else{
+            list.setCamera(cam); // select camera for sorting
+            list.sort();
+            for (int i = 0; i < list.size(); i++) {
+                Geometry obj = list.get(i);
+                assert obj != null;
+                rm.renderGeometry(obj);
+                obj.queueDistance = Float.NEGATIVE_INFINITY;
+            }
+            if (clear) {
+                list.clear();
+            }
         }
     }
 

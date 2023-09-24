@@ -43,12 +43,16 @@ import com.jme3.material.TechniqueDef;
 import com.jme3.math.*;
 import com.jme3.post.SceneProcessor;
 import com.jme3.profile.*;
+import com.jme3.renderer.framegraph.FGGlobal;
+import com.jme3.renderer.framegraph.FGRenderContext;
+import com.jme3.renderer.framegraph.FrameGraph;
 import com.jme3.renderer.pipeline.Forward;
 import com.jme3.renderer.pipeline.RenderPipeline;
 import com.jme3.renderer.queue.GeometryList;
 import com.jme3.renderer.queue.RenderQueue;
 import com.jme3.renderer.queue.RenderQueue.Bucket;
 import com.jme3.renderer.queue.RenderQueue.ShadowMode;
+import com.jme3.renderer.renderPass.*;
 import com.jme3.scene.*;
 import com.jme3.shader.Shader;
 import com.jme3.shader.UniformBinding;
@@ -72,6 +76,18 @@ import java.util.logging.Logger;
  * @see Spatial
  */
 public class RenderManager {
+    // frameGraph=============================================================================↓
+    private IRenderGeometry iRenderGeometry;
+    private boolean useFramegraph = false;
+    private FrameGraph frameGraph;
+    private GBufferPass gBufferPass;
+    private DeferredShadingPass deferredShadingPass;
+    private OpaquePass opaquePass;
+    private SkyPass skyPass;
+    private TransparentPass transparentPass;
+    private TranslucentPass translucentPass;
+    private GuiPass guiPass;
+    // frameGraph=============================================================================↑
     // 主要pass阶段
     public enum PASS_STAGE{
         PRE_PASS,
@@ -139,6 +155,28 @@ public class RenderManager {
         // init pipeline
         setForward(TechniqueDef.Pipeline.Forward);
         setDeferred(TechniqueDef.Pipeline.Deferred);
+        if(useFramegraph){
+            frameGraph = new FrameGraph(new FGRenderContext(null, null, null));
+            gBufferPass = new GBufferPass();
+            deferredShadingPass = new DeferredShadingPass();
+            opaquePass = new OpaquePass();
+            skyPass = new SkyPass();
+            transparentPass = new TransparentPass();
+            translucentPass = new TranslucentPass();
+            guiPass = new GuiPass();
+        }
+    }
+
+    /**
+     * SetRenderGeometry.<br/>
+     * @param iRenderGeometry
+     */
+    public final void setRenderGeometryHandler(IRenderGeometry iRenderGeometry){
+        this.iRenderGeometry = iRenderGeometry;
+    }
+
+    public IRenderGeometry getRenderGeometryHandler() {
+        return iRenderGeometry;
     }
 
     /**
@@ -1008,27 +1046,49 @@ public class RenderManager {
      * @see #renderTranslucentQueue(com.jme3.renderer.ViewPort) 
      */
     public void renderViewPortQueues(ViewPort vp, boolean flush) {
-        RenderPipeline renderPipeline = null;
-        if(renderPath == RenderPath.Forward){
-            renderPipeline = renderPipelines[renderPath.getId()];
-            activePipeline(renderPipeline);
-            renderPipeline.begin(this, vp);
-            renderPipeline.draw(this, vp.getQueue(), vp, flush);
-            renderPipeline.end(this, vp);
+        RenderQueue rq = vp.getQueue();
+        Camera cam = vp.getCamera();
+        boolean depthRangeChanged = false;
+
+        // render opaque objects with default depth range
+        // opaque objects are sorted front-to-back, reducing overdraw
+        if (prof!=null) prof.vpStep(VpStep.RenderBucket, vp, RenderQueue.Bucket.Opaque);
+        rq.renderQueue(RenderQueue.Bucket.Opaque, this, cam, flush);
+
+        // render the sky, with depth range set to the farthest
+        if (!rq.isQueueEmpty(RenderQueue.Bucket.Sky)) {
+            if (prof!=null) prof.vpStep(VpStep.RenderBucket, vp, RenderQueue.Bucket.Sky);
+            renderer.setDepthRange(1, 1);
+            rq.renderQueue(RenderQueue.Bucket.Sky, this, cam, flush);
+            depthRangeChanged = true;
         }
-        else if(renderPath == RenderPath.Deferred){
-            // todo:判断是否进行PrePass,MaskPass,BasePass...
-            renderPipeline = renderPipelines[renderPath.getId()];
-            activePipeline(renderPipeline);
-            renderPipeline.begin(this, vp);
-            renderPipeline.draw(this, vp.getQueue(), vp, flush);
-            renderPipeline.end(this, vp);
-            // final...
-            renderPipeline = renderPipelines[RenderPath.Forward.getId()];
-            activePipeline(renderPipeline);
-            renderPipeline.begin(this, vp);
-            renderPipeline.draw(this, vp.getQueue(), vp, flush);
-            renderPipeline.end(this, vp);
+
+
+        // transparent objects are last because they require blending with the
+        // rest of the scene's objects. Consequently, they are sorted
+        // back-to-front.
+        if (!rq.isQueueEmpty(RenderQueue.Bucket.Transparent)) {
+            if (prof!=null) prof.vpStep(VpStep.RenderBucket, vp, RenderQueue.Bucket.Transparent);
+            if (depthRangeChanged) {
+                renderer.setDepthRange(0, 1);
+                depthRangeChanged = false;
+            }
+
+            rq.renderQueue(RenderQueue.Bucket.Transparent, this, cam, flush);
+        }
+
+        if (!rq.isQueueEmpty(RenderQueue.Bucket.Gui)) {
+            if (prof!=null) prof.vpStep(VpStep.RenderBucket, vp, RenderQueue.Bucket.Gui);
+            renderer.setDepthRange(0, 0);
+            this.setCamera(cam, true);
+            rq.renderQueue(RenderQueue.Bucket.Gui, this, cam, flush);
+            this.setCamera(cam, false);
+            depthRangeChanged = true;
+        }
+
+        // restore range to default
+        if (depthRangeChanged) {
+            renderer.setDepthRange(0, 1);
         }
     }
 
@@ -1179,67 +1239,154 @@ public class RenderManager {
         if (!vp.isEnabled()) {
             return;
         }
-        if (prof!=null) prof.vpStep(VpStep.BeginRender, vp, null);
-                
-        SafeArrayList<SceneProcessor> processors = vp.getProcessors();
-        if (processors.isEmpty()) {
-            processors = null;
-        }
+        if(useFramegraph){
+            frameGraph.reset();
+            frameGraph.getRenderContext().renderManager = this;
+            frameGraph.getRenderContext().renderQueue = vp.getQueue();
+            frameGraph.getRenderContext().viewPort = vp;
 
-        if (processors != null) {
-            if (prof != null) prof.vpStep(VpStep.PreFrame, vp, null);
-            for (SceneProcessor proc : processors.getArray()) {
-                if (!proc.isInitialized()) {
-                    proc.initialize(this, vp);
+            if (prof!=null) prof.vpStep(VpStep.BeginRender, vp, null);
+
+            SafeArrayList<SceneProcessor> processors = vp.getProcessors();
+            if (processors.isEmpty()) {
+                processors = null;
+            }
+
+            if (processors != null) {
+                if (prof != null) prof.vpStep(VpStep.PreFrame, vp, null);
+                for (SceneProcessor proc : processors.getArray()) {
+                    if (!proc.isInitialized()) {
+                        proc.initialize(this, vp);
+                    }
+                    proc.setProfiler(this.prof);
+                    if (prof != null) prof.spStep(SpStep.ProcPreFrame, proc.getClass().getSimpleName());
+                    proc.preFrame(tpf);
                 }
-                proc.setProfiler(this.prof);
-                if (prof != null) prof.spStep(SpStep.ProcPreFrame, proc.getClass().getSimpleName());
-                proc.preFrame(tpf);
             }
-        }
 
-        renderer.setFrameBuffer(vp.getOutputFrameBuffer());
-        setCamera(vp.getCamera(), false);
-        if (vp.isClearDepth() || vp.isClearColor() || vp.isClearStencil()) {
-            if (vp.isClearColor()) {
-                renderer.setBackgroundColor(vp.getBackgroundColor());
+            renderer.setFrameBuffer(vp.getOutputFrameBuffer());
+            setCamera(vp.getCamera(), false);
+            if (vp.isClearDepth() || vp.isClearColor() || vp.isClearStencil()) {
+                if (vp.isClearColor()) {
+                    renderer.setBackgroundColor(vp.getBackgroundColor());
+                }
+                renderer.clearBuffers(vp.isClearColor(),
+                        vp.isClearDepth(),
+                        vp.isClearStencil());
             }
-            renderer.clearBuffers(vp.isClearColor(),
-                    vp.isClearDepth(),
-                    vp.isClearStencil());
-        }
 
-        if (prof!=null) prof.vpStep(VpStep.RenderScene, vp, null);
-        List<Spatial> scenes = vp.getScenes();
-        for (int i = scenes.size() - 1; i >= 0; i--) {            
-            renderScene(scenes.get(i), vp);
-        }
-
-        if (processors != null) {
-            if (prof!=null) prof.vpStep(VpStep.PostQueue, vp, null);
-            for (SceneProcessor proc : processors.getArray()) {
-                if (prof != null) prof.spStep(SpStep.ProcPostQueue, proc.getClass().getSimpleName());
-                proc.postQueue(vp.getQueue());
+            if (prof!=null) prof.vpStep(VpStep.RenderScene, vp, null);
+            List<Spatial> scenes = vp.getScenes();
+            for (int i = scenes.size() - 1; i >= 0; i--) {
+                renderScene(scenes.get(i), vp);
             }
-        }
 
-        if (prof!=null) prof.vpStep(VpStep.FlushQueue, vp, null);
-        flushQueue(vp);
-
-        if (processors != null) {
-            if (prof!=null) prof.vpStep(VpStep.PostFrame, vp, null);
-            for (SceneProcessor proc : processors.getArray()) {
-                if (prof != null) prof.spStep(SpStep.ProcPostFrame, proc.getClass().getSimpleName());
-                proc.postFrame(vp.getOutputFrameBuffer());
+            if (processors != null) {
+                if (prof!=null) prof.vpStep(VpStep.PostQueue, vp, null);
+                for (SceneProcessor proc : processors.getArray()) {
+                    if (prof != null) prof.spStep(SpStep.ProcPostQueue, proc.getClass().getSimpleName());
+                    proc.postQueue(vp.getQueue());
+                }
             }
-            if (prof != null) prof.vpStep(VpStep.ProcEndRender, vp, null);
-        }
-        //renders the translucent objects queue after processors have been rendered
-        renderTranslucentQueue(vp);
-        // clear any remaining spatials that were not rendered.
-        clearQueue(vp);
 
-        if (prof!=null) prof.vpStep(VpStep.EndRender, vp, null);
+            if(renderPath == RenderPath.Deferred){
+                frameGraph.addPass(gBufferPass);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_0, GBufferPass.S_RT_0);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_1, GBufferPass.S_RT_1);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_2, GBufferPass.S_RT_2);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_3, GBufferPass.S_RT_3);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_4, GBufferPass.S_RT_4);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_LIGHT_DATA, GBufferPass.S_LIGHT_DATA);
+                deferredShadingPass.setSinkLinkage(FGGlobal.S_DEFAULT_FB, GBufferPass.S_FB);
+                frameGraph.addPass(deferredShadingPass);
+            }
+            frameGraph.addPass(opaquePass);
+            frameGraph.addPass(skyPass);
+            frameGraph.addPass(transparentPass);
+            frameGraph.addPass(guiPass);
+
+            if (processors != null) {
+                if (prof!=null) prof.vpStep(VpStep.PostFrame, vp, null);
+                for (SceneProcessor proc : processors.getArray()) {
+                    if (prof != null) prof.spStep(SpStep.ProcPostFrame, proc.getClass().getSimpleName());
+                    proc.postFrame(vp.getOutputFrameBuffer());
+                }
+                if (prof != null) prof.vpStep(VpStep.ProcEndRender, vp, null);
+            }
+            //renders the translucent objects queue after processors have been rendered
+            frameGraph.addPass(translucentPass);
+
+
+            frameGraph.finalize();
+            frameGraph.execute();
+            // clear any remaining spatials that were not rendered.
+            clearQueue(vp);
+
+            if (prof!=null) prof.vpStep(VpStep.EndRender, vp, null);
+        }
+        else{
+            if (prof!=null) prof.vpStep(VpStep.BeginRender, vp, null);
+
+            SafeArrayList<SceneProcessor> processors = vp.getProcessors();
+            if (processors.isEmpty()) {
+                processors = null;
+            }
+
+            if (processors != null) {
+                if (prof != null) prof.vpStep(VpStep.PreFrame, vp, null);
+                for (SceneProcessor proc : processors.getArray()) {
+                    if (!proc.isInitialized()) {
+                        proc.initialize(this, vp);
+                    }
+                    proc.setProfiler(this.prof);
+                    if (prof != null) prof.spStep(SpStep.ProcPreFrame, proc.getClass().getSimpleName());
+                    proc.preFrame(tpf);
+                }
+            }
+
+            renderer.setFrameBuffer(vp.getOutputFrameBuffer());
+            setCamera(vp.getCamera(), false);
+            if (vp.isClearDepth() || vp.isClearColor() || vp.isClearStencil()) {
+                if (vp.isClearColor()) {
+                    renderer.setBackgroundColor(vp.getBackgroundColor());
+                }
+                renderer.clearBuffers(vp.isClearColor(),
+                        vp.isClearDepth(),
+                        vp.isClearStencil());
+            }
+
+            if (prof!=null) prof.vpStep(VpStep.RenderScene, vp, null);
+            List<Spatial> scenes = vp.getScenes();
+            for (int i = scenes.size() - 1; i >= 0; i--) {
+                renderScene(scenes.get(i), vp);
+            }
+
+            if (processors != null) {
+                if (prof!=null) prof.vpStep(VpStep.PostQueue, vp, null);
+                for (SceneProcessor proc : processors.getArray()) {
+                    if (prof != null) prof.spStep(SpStep.ProcPostQueue, proc.getClass().getSimpleName());
+                    proc.postQueue(vp.getQueue());
+                }
+            }
+
+            if (prof!=null) prof.vpStep(VpStep.FlushQueue, vp, null);
+            flushQueue(vp);
+
+            if (processors != null) {
+                if (prof!=null) prof.vpStep(VpStep.PostFrame, vp, null);
+                for (SceneProcessor proc : processors.getArray()) {
+                    if (prof != null) prof.spStep(SpStep.ProcPostFrame, proc.getClass().getSimpleName());
+                    proc.postFrame(vp.getOutputFrameBuffer());
+                }
+                if (prof != null) prof.vpStep(VpStep.ProcEndRender, vp, null);
+            }
+            //renders the translucent objects queue after processors have been rendered
+            renderTranslucentQueue(vp);
+            // clear any remaining spatials that were not rendered.
+            clearQueue(vp);
+
+            if (prof!=null) prof.vpStep(VpStep.EndRender, vp, null);
+        }
     }
     
     /**

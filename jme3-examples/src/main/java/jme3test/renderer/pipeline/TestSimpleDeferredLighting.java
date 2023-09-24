@@ -389,7 +389,7 @@ public class TestSimpleDeferredLighting extends SimpleApplication implements Act
     public void simpleInitApp() {
         currentRenderPath = RenderManager.RenderPath.Forward;
         renderManager.setRenderPath(currentRenderPath);
-        testScene4();
+        testScene5();
         
         
 //        MaterialDebugAppState debug = new MaterialDebugAppState();
