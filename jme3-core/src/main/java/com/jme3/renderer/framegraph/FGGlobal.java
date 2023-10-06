@@ -12,6 +12,9 @@ import java.util.ArrayList;
  */
 public class FGGlobal {
     public final static String S_GLOABLE_PASS_SOURCE_NAME = "$";
+    public final static String S_SCENE_COLOR_FB = "sceneColorFramebuffer";
+    public final static String S_SCENE_COLOR_RT = "sceneColorRT";
+    public final static String S_SCENE_DEPTH_RT = "sceneDepthRT";
     public final static String S_DEFAULT_FB = "defaultFramebuffer";
     private final static ArrayList<FGSink> g_Sinks = new ArrayList<>();
     private final static ArrayList<FGSource> g_Sources = new ArrayList<>();

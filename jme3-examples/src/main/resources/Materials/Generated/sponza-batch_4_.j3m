@@ -1,0 +1,23 @@
+Material MyMaterial : Common/MatDefs/Light/Lighting.j3md {
+    MaterialParameters {
+        Diffuse : 0.64 0.64 0.64 1.0
+        UseMaterialColors : true
+        ParallaxHeight : 0.05
+        Ambient : 0.0 0.0 0.0 1.0
+        BackfaceShadows : false
+        DiffuseMap : Flip Repeat WrapRepeat_S WrapRepeat_T "Models/sponza/vase_diff.png"
+        Specular : 0.139447 0.139447 0.139447 1.0
+        Shininess : 74.5098
+        NormalMap : Flip Repeat "Models/sponza/vase_ddn.png"
+        SpecularMap : Flip Repeat "Models/sponza/vase_spec.png"
+    }
+    AdditionalRenderState {
+      FaceCull Back
+      DepthWrite On
+      ColorWrite On
+      PolyOffset 0.0 0.0
+      DepthTest On
+      Blend Off
+      Wireframe Off
+    }
+}

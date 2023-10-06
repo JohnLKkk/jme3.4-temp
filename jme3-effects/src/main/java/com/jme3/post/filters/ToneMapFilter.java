@@ -37,6 +37,8 @@ import com.jme3.export.JmeExporter;
 import com.jme3.export.JmeImporter;
 import com.jme3.export.OutputCapsule;
 import com.jme3.material.Material;
+import com.jme3.material.MaterialDef;
+import com.jme3.material.TechniqueDef;
 import com.jme3.math.Vector3f;
 import com.jme3.post.Filter;
 import com.jme3.renderer.RenderManager;
@@ -49,10 +51,26 @@ import java.io.IOException;
  * @author Kirill Vainer
  */
 public class ToneMapFilter extends Filter {
+    private ToneMapMode toneMapMode = ToneMapMode.DEFAULT;
+    public static enum ToneMapMode{
+        DEFAULT(TechniqueDef.DEFAULT_TECHNIQUE_NAME),
+        ACES_FILMIC("ACESFilmic");
+        private String name;
+
+        public String getName() {
+            return name;
+        }
+
+        ToneMapMode(String name){
+            this.name = name;
+        }
+    }
 
     private static final Vector3f DEFAULT_WHITEPOINT = new Vector3f(11.2f, 11.2f, 11.2f);
     
     private Vector3f whitePoint = DEFAULT_WHITEPOINT.clone();
+
+    private float exposure = 1.0f;
 
     /**
      * Creates a tone-mapping filter with the default white-point of 11.2.
@@ -70,7 +88,18 @@ public class ToneMapFilter extends Filter {
         this();
         this.whitePoint = whitePoint.clone();
     }
-    
+
+    public void setExposure(float exposure) {
+        this.exposure = exposure;
+        if(material != null){
+            material.setFloat("Exposure", exposure);
+        }
+    }
+
+    public float getExposure() {
+        return exposure;
+    }
+
     @Override
     protected boolean isRequiresDepthTexture() {
         return false;
@@ -80,11 +109,28 @@ public class ToneMapFilter extends Filter {
     protected void initFilter(AssetManager manager, RenderManager renderManager, ViewPort vp, int w, int h) {
         material = new Material(manager, "Common/MatDefs/Post/ToneMap.j3md");
         material.setVector3("WhitePoint", whitePoint);
+        material.setFloat("Exposure", exposure);
+        if(this.toneMapMode != ToneMapMode.DEFAULT){
+            material.selectTechnique(toneMapMode.getName(), renderManager);
+        }
     }
 
     @Override
     protected Material getMaterial() {
         return material;
+    }
+
+    /**
+     * set tone map mode.
+     * @param mode
+     */
+    public void setToneMapModel(ToneMapMode mode, RenderManager renderManager){
+        if(mode != this.toneMapMode){
+            toneMapMode = mode;
+            if(material != null){
+                material.selectTechnique(toneMapMode.getName(), renderManager);
+            }
+        }
     }
 
     /**

@@ -33,6 +33,9 @@ varying vec3 AmbientSum;
 varying vec4 DiffuseSum;
 varying vec3 SpecularSum;
 
+varying vec3 wPosition;
+varying vec3 wNormal;
+
 attribute vec3 inPosition;
 attribute vec2 inTexCoord;
 attribute vec3 inNormal;
@@ -122,6 +125,9 @@ void main(){
    vec3 wvPosition = TransformWorldView(modelSpacePos).xyz;// (g_WorldViewMatrix * modelSpacePos).xyz;
    vec3 wvNormal  = normalize(TransformNormal(modelSpaceNorm));//normalize(g_NormalMatrix * modelSpaceNorm);
    vec3 viewDir = normalize(-wvPosition);
+
+    wPosition = TransformWorld(modelSpacePos).xyz;
+    wNormal = TransformWorldNormal(modelSpaceNorm).xyz;
   
    vec4 wvLightPos = (g_ViewMatrix * vec4(g_LightPosition.xyz,clamp(g_LightColor.w,0.0,1.0)));
    wvLightPos.w = g_LightPosition.w;

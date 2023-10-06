@@ -45,9 +45,14 @@ public class FrameGraph {
         for(FGSink sink : pass.getSinks()){
             String linkPassName = sink.getLinkPassName();
             
-            if(linkPassName.isEmpty()){
-                System.err.println("In pass named [" + pass.getName() + "] sink named [" + sink.getRegisteredName() + "] has no target source set.");
-                return;
+            if((linkPassName == null || linkPassName.isEmpty())){
+                if(sink.isRequired()){
+                    System.err.println("In pass named [" + pass.getName() + "] sink named [" + sink.getRegisteredName() + "] has no target source set.");
+                    return;
+                }
+                else{
+                    continue;
+                }
             }
             
             // check check whether target source is global
@@ -111,6 +116,20 @@ public class FrameGraph {
     public void addGlobalSource(FGSource source){
         globalSources.add(source);
     }
+
+    public void replaceOrAddGlobalSource(FGSource source){
+        int index = -1;
+        for(int i = 0;i < globalSources.size();i++){
+            if(globalSources.get(i).getName().equals(source.getName())){
+                index = i;
+                break;
+            }
+        }
+        if(index >= 0){
+            globalSources.remove(index);
+        }
+        globalSources.add(source);
+    }
     
     public void addGlobalSink(FGSink sink){
         globalSinks.add(sink);
@@ -131,6 +150,7 @@ public class FrameGraph {
             linkSinks(pass);
         
         // add to container of passes
+        pass.prepare(renderContext);
         passes.add(pass);
     }
     

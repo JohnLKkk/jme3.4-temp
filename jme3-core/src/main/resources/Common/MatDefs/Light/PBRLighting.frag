@@ -271,12 +271,12 @@ void main(){
         float weight2 = 0.0;
         float weight3 = 0.0;
 
-        float ndf = renderProbe(viewDir, wPosition, normal, norm, Roughness, diffuseColor, specularColor, ndotv, ao, g_LightProbeData, g_ShCoeffs, g_PrefEnvMap, color1);
+        float ndf = renderProbe(viewDir, wPosition, normal, norm, Roughness, diffuseColor.rgb, specularColor.rgb, ndotv, ao, g_LightProbeData, g_ShCoeffs, g_PrefEnvMap, color1);
         #if NB_PROBES >= 2
-            float ndf2 = renderProbe(viewDir, wPosition, normal, norm, Roughness, diffuseColor, specularColor, ndotv, ao, g_LightProbeData2, g_ShCoeffs2, g_PrefEnvMap2, color2);
+            float ndf2 = renderProbe(viewDir, wPosition, normal, norm, Roughness, diffuseColor.rgb, specularColor.rgb, ndotv, ao, g_LightProbeData2, g_ShCoeffs2, g_PrefEnvMap2, color2);
         #endif
         #if NB_PROBES == 3
-            float ndf3 = renderProbe(viewDir, wPosition, normal, norm, Roughness, diffuseColor, specularColor, ndotv, ao, g_LightProbeData3, g_ShCoeffs3, g_PrefEnvMap3, color3);
+            float ndf3 = renderProbe(viewDir, wPosition, normal, norm, Roughness, diffuseColor.rgb, specularColor.rgb, ndotv, ao, g_LightProbeData3, g_ShCoeffs3, g_PrefEnvMap3, color3);
         #endif
 
         #if NB_PROBES >= 2

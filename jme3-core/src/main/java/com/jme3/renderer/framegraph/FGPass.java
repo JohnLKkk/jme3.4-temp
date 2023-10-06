@@ -21,6 +21,7 @@ public abstract class FGPass {
         this.sinks = new ArrayList<>();
         this.sources = new ArrayList<>();
     }
+    public void prepare(FGRenderContext renderContext){}
     public abstract void execute(FGRenderContext renderContext);
 
     public String getName() {

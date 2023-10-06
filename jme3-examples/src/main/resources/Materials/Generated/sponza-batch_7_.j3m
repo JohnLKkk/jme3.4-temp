@@ -1,0 +1,21 @@
+Material MyMaterial : Common/MatDefs/Light/Lighting.j3md {
+    MaterialParameters {
+        Diffuse : 0.0 1.0 0.002656 1.0
+        UseMaterialColors : true
+        ParallaxHeight : 0.05
+        Ambient : 1.0 1.0 1.0 1.0
+        BackfaceShadows : false
+        DiffuseMap : Flip Repeat WrapRepeat_S WrapRepeat_T "Models/sponza/default.png"
+        Specular : 0.2 0.2 0.2 1.0
+        Shininess : 9.803922
+    }
+    AdditionalRenderState {
+      FaceCull Back
+      DepthWrite On
+      ColorWrite On
+      PolyOffset 0.0 0.0
+      DepthTest On
+      Blend Off
+      Wireframe Off
+    }
+}

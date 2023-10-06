@@ -40,12 +40,11 @@ import com.jme3.material.MaterialDef;
 import com.jme3.material.RenderState;
 import com.jme3.material.Technique;
 import com.jme3.material.TechniqueDef;
+import com.jme3.material.logic.TileBasedDeferredSinglePassLightingLogic;
 import com.jme3.math.*;
 import com.jme3.post.SceneProcessor;
 import com.jme3.profile.*;
-import com.jme3.renderer.framegraph.FGGlobal;
-import com.jme3.renderer.framegraph.FGRenderContext;
-import com.jme3.renderer.framegraph.FrameGraph;
+import com.jme3.renderer.framegraph.*;
 import com.jme3.renderer.pipeline.Forward;
 import com.jme3.renderer.pipeline.RenderPipeline;
 import com.jme3.renderer.queue.GeometryList;
@@ -59,6 +58,9 @@ import com.jme3.shader.UniformBinding;
 import com.jme3.shader.UniformBindingManager;
 import com.jme3.system.NullRenderer;
 import com.jme3.system.Timer;
+import com.jme3.texture.FrameBuffer;
+import com.jme3.texture.Image;
+import com.jme3.texture.Texture2D;
 import com.jme3.util.SafeArrayList;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -76,18 +78,26 @@ import java.util.logging.Logger;
  * @see Spatial
  */
 public class RenderManager {
+    // TileInfo
+    private TileBasedDeferredSinglePassLightingLogic.TileInfo tileInfo;
+    // todo:Since glTexImage is not used to dynamically adjust lightIndex size currently, this tileSize needs to be set cautiously.
+    private int curTileSize = 64;
     // frameGraph=============================================================================↓
     private IRenderGeometry iRenderGeometry;
-    private boolean useFramegraph = false;
+    private boolean useFramegraph = true;
     private FrameGraph frameGraph;
     private GBufferPass gBufferPass;
     private DeferredShadingPass deferredShadingPass;
+    private TileDeferredShadingPass tileDeferredShadingPass;
     private OpaquePass opaquePass;
     private SkyPass skyPass;
     private TransparentPass transparentPass;
     private TranslucentPass translucentPass;
     private GuiPass guiPass;
+    private PostProcessorPass postProcessorPass;
     // frameGraph=============================================================================↑
+
+    private boolean isBakeLightProbeVolume;
     // 主要pass阶段
     public enum PASS_STAGE{
         PRE_PASS,
@@ -99,6 +109,7 @@ public class RenderManager {
     private PASS_STAGE passStage;
     // RenderPath
     public enum RenderPath{
+        None(-1, "None"),
         Forward(0, "Forward"),
         ForwardPlus(1, "ForwardPlus"),
         Deferred(2, "Deferred"),
@@ -159,12 +170,56 @@ public class RenderManager {
             frameGraph = new FrameGraph(new FGRenderContext(null, null, null));
             gBufferPass = new GBufferPass();
             deferredShadingPass = new DeferredShadingPass();
+            tileDeferredShadingPass = new TileDeferredShadingPass();
             opaquePass = new OpaquePass();
             skyPass = new SkyPass();
             transparentPass = new TransparentPass();
             translucentPass = new TranslucentPass();
             guiPass = new GuiPass();
+            postProcessorPass = new PostProcessorPass("PostPass");
         }
+    }
+
+    /**
+     * EnableFrameGraph?
+     * @param useFramegraph
+     */
+    public final void enableFramegraph(boolean useFramegraph){
+        this.useFramegraph = useFramegraph;
+    }
+
+    public boolean isBakeLightProbeVolume() {
+        return isBakeLightProbeVolume;
+    }
+
+    public void enableBakeLightProbeVolume(boolean bakeLightProbeVolume) {
+        this.isBakeLightProbeVolume = bakeLightProbeVolume;
+    }
+
+    /**
+     * SetTileBasedInfo.<br/>
+     * @param tileSize
+     * @param tileWidth
+     * @param tileHeight
+     * @param tileNum
+     */
+    private final void setTileInfo(int tileSize, int tileWidth, int tileHeight, int tileNum){
+        if(tileInfo == null){
+            tileInfo = new TileBasedDeferredSinglePassLightingLogic.TileInfo(tileSize, tileWidth, tileHeight, tileNum);
+        }
+    }
+
+    /**
+     * update tile size.<br/>
+     * @param tileSize
+     */
+    public final void updateTileSize(int tileSize){
+        if(curTileSize == tileSize)return;
+        curTileSize = tileSize;
+    }
+
+    public TileBasedDeferredSinglePassLightingLogic.TileInfo getTileInfo() {
+        return tileInfo;
     }
 
     /**
@@ -1240,6 +1295,8 @@ public class RenderManager {
             return;
         }
         if(useFramegraph){
+            RenderPath curRenderPath = vp.getRenderPath() == RenderPath.None ? renderPath : vp.getRenderPath();
+
             frameGraph.reset();
             frameGraph.getRenderContext().renderManager = this;
             frameGraph.getRenderContext().renderQueue = vp.getQueue();
@@ -1289,33 +1346,49 @@ public class RenderManager {
                 }
             }
 
-            if(renderPath == RenderPath.Deferred){
+            if(curRenderPath == RenderPath.Deferred){
                 frameGraph.addPass(gBufferPass);
-                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_0, GBufferPass.S_RT_0);
-                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_1, GBufferPass.S_RT_1);
-                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_2, GBufferPass.S_RT_2);
-                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_3, GBufferPass.S_RT_3);
-                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_4, GBufferPass.S_RT_4);
-                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_LIGHT_DATA, GBufferPass.S_LIGHT_DATA);
-                deferredShadingPass.setSinkLinkage(FGGlobal.S_DEFAULT_FB, GBufferPass.S_FB);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_0, gBufferPass.getName() + "." + GBufferPass.S_RT_0);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_1, gBufferPass.getName() + "." + GBufferPass.S_RT_1);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_2, gBufferPass.getName() + "." + GBufferPass.S_RT_2);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_3, gBufferPass.getName() + "." + GBufferPass.S_RT_3);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_4, gBufferPass.getName() + "." + GBufferPass.S_RT_4);
+                deferredShadingPass.setSinkLinkage(DeferredShadingPass.S_LIGHT_DATA, gBufferPass.getName() + "." + GBufferPass.S_LIGHT_DATA);
+                deferredShadingPass.setSinkLinkage(FGGlobal.S_DEFAULT_FB, gBufferPass.getName() + "." + GBufferPass.S_FB);
                 frameGraph.addPass(deferredShadingPass);
+            }
+            else if(curRenderPath == RenderPath.TiledDeferred){
+                curTileSize = getCurrentCamera().getWidth() / 6;
+                int tileWidth = (int)(Math.floor(viewWidth / curTileSize));
+                int tileHeight = (int)(Math.floor(viewHeight / curTileSize));
+                setTileInfo(curTileSize, tileWidth, tileHeight, tileWidth * tileHeight);
+                frameGraph.addPass(gBufferPass);
+                tileDeferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_0, gBufferPass.getName() + "." + GBufferPass.S_RT_0);
+                tileDeferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_1, gBufferPass.getName() + "." + GBufferPass.S_RT_1);
+                tileDeferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_2, gBufferPass.getName() + "." + GBufferPass.S_RT_2);
+                tileDeferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_3, gBufferPass.getName() + "." + GBufferPass.S_RT_3);
+                tileDeferredShadingPass.setSinkLinkage(DeferredShadingPass.S_RT_4, gBufferPass.getName() + "." + GBufferPass.S_RT_4);
+                tileDeferredShadingPass.setSinkLinkage(DeferredShadingPass.S_LIGHT_DATA, gBufferPass.getName() + "." + GBufferPass.S_LIGHT_DATA);
+                tileDeferredShadingPass.setSinkLinkage(FGGlobal.S_DEFAULT_FB, gBufferPass.getName() + "." + GBufferPass.S_FB);
+                frameGraph.addPass(tileDeferredShadingPass);
             }
             frameGraph.addPass(opaquePass);
             frameGraph.addPass(skyPass);
             frameGraph.addPass(transparentPass);
             frameGraph.addPass(guiPass);
 
-            if (processors != null) {
-                if (prof!=null) prof.vpStep(VpStep.PostFrame, vp, null);
-                for (SceneProcessor proc : processors.getArray()) {
-                    if (prof != null) prof.spStep(SpStep.ProcPostFrame, proc.getClass().getSimpleName());
-                    proc.postFrame(vp.getOutputFrameBuffer());
-                }
-                if (prof != null) prof.vpStep(VpStep.ProcEndRender, vp, null);
-            }
+            // todo:A temporary workaround for old pipeline postprocessors, unify later to use FG for internal logic, currently just replace with a simple PostProcessorPass
+//            if (processors != null) {
+//                if (prof!=null) prof.vpStep(VpStep.PostFrame, vp, null);
+//                for (SceneProcessor proc : processors.getArray()) {
+//                    if (prof != null) prof.spStep(SpStep.ProcPostFrame, proc.getClass().getSimpleName());
+//                    proc.postFrame(vp.getOutputFrameBuffer());
+//                }
+//                if (prof != null) prof.vpStep(VpStep.ProcEndRender, vp, null);
+//            }
+            frameGraph.addPass(postProcessorPass);
             //renders the translucent objects queue after processors have been rendered
             frameGraph.addPass(translucentPass);
-
 
             frameGraph.finalize();
             frameGraph.execute();

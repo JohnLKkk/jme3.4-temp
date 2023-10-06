@@ -14,7 +14,7 @@ public abstract class FGSink {
     private String linkPassResName;
     protected boolean bIsRequired = false;
     // Always validate?
-    protected boolean bLinkValidate = true;
+    protected boolean bLinkValidate = false;
     protected FGSink(String registeredName){
         this.registeredName = registeredName;
     }

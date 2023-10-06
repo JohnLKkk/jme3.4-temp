@@ -36,6 +36,7 @@ import com.jme3.light.Light;
 import com.jme3.light.LightList;
 import com.jme3.light.PointLight;
 import com.jme3.light.SpotLight;
+import com.jme3.light.gi.LightProbeVolume;
 import com.jme3.material.RenderState;
 import com.jme3.material.TechniqueDef;
 import com.jme3.math.ColorRGBA;
@@ -73,10 +74,16 @@ public final class MultiPassLightingLogic extends DefaultTechniqueDefLogic {
         Uniform lightColor = shader.getUniform("g_LightColor");
         Uniform lightPos = shader.getUniform("g_LightPosition");
         Uniform ambientColor = shader.getUniform("g_AmbientLightColor");
+        Uniform bakeLightProbeVolume = shader.getUniform("g_IsBakeLightProbeVolume");
+        if(bakeLightProbeVolume != null){
+            bakeLightProbeVolume.setValue(VarType.Boolean, renderManager.isBakeLightProbeVolume());
+        }
         boolean isFirstLight = true;
         boolean isSecondLight = false;
         
         getAmbientColor(lights, false, ambientLightColor);
+        // setupGI
+        boolean hasLPV = LightProbeVolumeRender.setupLightProbeVolumes(shader, geometry, lights, true);
 
         for (int i = 0; i < lights.size(); i++) {
             Light l = lights.get(i);
@@ -87,12 +94,14 @@ public final class MultiPassLightingLogic extends DefaultTechniqueDefLogic {
             if (isFirstLight) {
                 // set ambient color for first light only
                 ambientColor.setValue(VarType.Vector4, ambientLightColor);
+                LightProbeVolumeRender.enableGI(shader, hasLPV);
                 isFirstLight = false;
                 isSecondLight = true;
             } else if (isSecondLight) {
                 ambientColor.setValue(VarType.Vector4, ColorRGBA.Black);
                 // apply additive blending for 2nd and future lights
                 r.applyRenderState(ADDITIVE_LIGHT);
+                LightProbeVolumeRender.enableGI(shader, false);
                 isSecondLight = false;
             }
 

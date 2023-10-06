@@ -5,11 +5,24 @@ MaterialDef Default GUI {
         Int NumSamplesDepth
         Texture2D Texture
         Vector3 WhitePoint
+        Float Exposure : 1.0
     }
 
     Technique {
         VertexShader GLSL100 GLSL150:   Common/MatDefs/Post/Post.vert
         FragmentShader GLSL100 GLSL150: Common/MatDefs/Post/ToneMap.frag
+
+        WorldParameters {
+        }
+
+        Defines {
+            NUM_SAMPLES : NumSamples
+        }
+    }
+
+    Technique ACESFilmic{
+        VertexShader GLSL100 GLSL150:   Common/MatDefs/Post/Post.vert
+        FragmentShader GLSL100 GLSL150: Common/MatDefs/Post/ACESFilmicToneMapping.frag
 
         WorldParameters {
         }

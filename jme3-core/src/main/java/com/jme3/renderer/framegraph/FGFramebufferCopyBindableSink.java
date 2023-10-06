@@ -10,6 +10,9 @@ import java.util.ArrayList;
  */
 public class FGFramebufferCopyBindableSink<T extends FGFramebufferSource.FrameBufferSourceProxy> extends FGContainerBindableSink<T>{
     FramebufferCopyBindableProxy framebufferCopyBindableProxy;
+    public final void setDistFrameBuffer(FrameBuffer distFrameBuffer){
+        framebufferCopyBindableProxy.distFramebuffer = distFrameBuffer;
+    }
     public FGFramebufferCopyBindableSink(String registeredName, FrameBuffer distFrameBuffer, boolean copyColor, boolean copyDepth, boolean copyStencil, ArrayList<FGBindable> container, int index) {
         super(registeredName, container, index);
         framebufferCopyBindableProxy = new FramebufferCopyBindableProxy(distFrameBuffer, copyColor, copyDepth, copyStencil);
@@ -36,7 +39,7 @@ public class FGFramebufferCopyBindableSink<T extends FGFramebufferSource.FrameBu
         @Override
         public void bind(FGRenderContext renderContext) {
             if(this.distFramebuffer != null || this.sourceFramebuffer != null){
-                renderContext.renderManager.getRenderer().copyFrameBuffer(this.distFramebuffer, this.sourceFramebuffer != null ? this.sourceFramebuffer : renderContext.viewPort.getOutputFrameBuffer(), bCopyColor, bCopyDepth || bCopyStencil);
+                renderContext.renderManager.getRenderer().copyFrameBuffer(this.sourceFramebuffer, this.distFramebuffer != null ? this.distFramebuffer : renderContext.viewPort.getOutputFrameBuffer(), bCopyColor, bCopyDepth || bCopyStencil);
             }
         }
     }

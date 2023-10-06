@@ -17,6 +17,7 @@ public abstract class FGRenderQueuePass extends FGBindingPass implements IRender
     protected ViewPort forceViewPort;
     // It is just geometry data for now. If we extend the RHI interface in the future, it may be adjusted to MeshDrawCommand.
     protected GeometryList passMeshDrawCommandList;
+    protected boolean canExecute;
     
     public FGRenderQueuePass(String name) {
         super(name);
@@ -36,6 +37,10 @@ public abstract class FGRenderQueuePass extends FGBindingPass implements IRender
     public void execute(FGRenderContext renderContext) {
         renderContext.renderManager.setRenderGeometryHandler(this);
         dispatchPassSetup(renderContext.renderQueue);
+        if(!canExecute){
+            renderContext.renderManager.setRenderGeometryHandler(null);
+            return;
+        }
         bindAll(renderContext);
 
         // todo:Use the default queue temporarily to avoid creating a temporary copy

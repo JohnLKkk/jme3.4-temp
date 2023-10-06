@@ -36,7 +36,13 @@ public class FGContainerBindableSink<T extends FGBindable> extends FGSink{
         this.container = container;
         this.index = index;
         bindableProxy = new FGBindableProxy(null);
-        this.container.set(index, bindableProxy);
+        if(index < this.container.size()){
+            this.container.set(index, bindableProxy);
+        }
+        else{
+            this.container.add(bindableProxy);
+            this.index = this.container.size() - 1;
+        }
     }
 
     @Override
@@ -54,7 +60,11 @@ public class FGContainerBindableSink<T extends FGBindable> extends FGSink{
     @Override
     public void postLinkValidate() {
         if(!linked){
-            System.err.println("Unlinked input: " + getRegisteredName());
+            if(bIsRequired)
+                System.err.println("Unlinked input: " + getRegisteredName());
+        }
+        else{
+            bLinkValidate = true;
         }
     }
 

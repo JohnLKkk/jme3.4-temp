@@ -124,7 +124,7 @@ vec3 ApproximateSpecularIBLPolynomial(samplerCube envMap, vec3 SpecularColor , f
 }
 
 
-float renderProbe(vec3 viewDir, vec3 worldPos, vec3 normal, vec3 norm, float Roughness, vec4 diffuseColor, vec4 specularColor, float ndotv, vec3 ao, mat4 lightProbeData,vec3 shCoeffs[9],samplerCube prefEnvMap, inout vec3 color ){
+float renderProbe(vec3 viewDir, vec3 worldPos, vec3 normal, vec3 norm, float Roughness, vec3 diffuseColor, vec3 specularColor, float ndotv, vec3 ao, mat4 lightProbeData,vec3 shCoeffs[9],samplerCube prefEnvMap, inout vec3 color ){
 
     // lightProbeData is a mat4 with this layout
     //   3x3 rot mat|

@@ -1,7 +1,7 @@
 #ifndef _JME_CONTEXT_
 #define _JME_CONTEXT_
 
-#if __VERSION__ >= 130
+#if __VERSION__ >= 120
 layout(location = 0) out vec4 outColor0;
 layout(location = 1) out vec4 outColor1;
 layout(location = 2) out vec4 outColor2;

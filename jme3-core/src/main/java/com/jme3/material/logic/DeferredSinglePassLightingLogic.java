@@ -42,6 +42,7 @@ import com.jme3.math.Vector4f;
 import com.jme3.renderer.Caps;
 import com.jme3.renderer.RenderManager;
 import com.jme3.renderer.Renderer;
+import com.jme3.renderer.TextureUnitException;
 import com.jme3.renderer.pipeline.Deferred;
 import com.jme3.scene.Geometry;
 import com.jme3.shader.DefineList;
@@ -51,13 +52,16 @@ import com.jme3.shader.VarType;
 import com.jme3.texture.Image;
 import com.jme3.texture.Texture;
 import com.jme3.texture.Texture2D;
+import com.jme3.texture.TextureCubeMap;
 import com.jme3.texture.image.ColorSpace;
 import com.jme3.texture.image.ImageRaster;
 import com.jme3.util.BufferUtils;
 import com.jme3.util.TempVars;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 
 public final class DeferredSinglePassLightingLogic extends DefaultTechniqueDefLogic {
 
@@ -65,6 +69,7 @@ public final class DeferredSinglePassLightingLogic extends DefaultTechniqueDefLo
     private static final String DEFINE_NB_LIGHTS = "NB_LIGHTS";
     private static final String DEFINE_USE_TEXTURE_PACK_MODE = "USE_TEXTURE_PACK_MODE";
     private static final String DEFINE_PACK_NB_LIGHTS = "PACK_NB_LIGHTS";
+    private static final String DEFINE_NB_SKY_LIGHT_AND_REFLECTION_PROBES = "NB_SKY_LIGHT_AND_REFLECTION_PROBES";
     private static final RenderState ADDITIVE_LIGHT = new RenderState();
     private boolean bUseTexturePackMode = true;
     // 避免过多的光源
@@ -79,6 +84,7 @@ public final class DeferredSinglePassLightingLogic extends DefaultTechniqueDefLo
     private int lightNum;
 
     private final ColorRGBA ambientLightColor = new ColorRGBA(0, 0, 0, 1);
+    final private List<LightProbe> skyLightAndReflectionProbes = new ArrayList<>(3);
 
     static {
         ADDITIVE_LIGHT.setBlendMode(BlendMode.AlphaAdditive);
@@ -89,6 +95,7 @@ public final class DeferredSinglePassLightingLogic extends DefaultTechniqueDefLo
     private int nbLightsDefineId;
     private int packNbLightsDefineId;
     private int packTextureModeDefineId;
+    private final int nbSkyLightAndReflectionProbesDefineId;
 
     public DeferredSinglePassLightingLogic(TechniqueDef techniqueDef) {
         super(techniqueDef);
@@ -101,6 +108,7 @@ public final class DeferredSinglePassLightingLogic extends DefaultTechniqueDefLo
         else{
             nbLightsDefineId = techniqueDef.addShaderUnmappedDefine(DEFINE_NB_LIGHTS, VarType.Int);
         }
+        nbSkyLightAndReflectionProbesDefineId = techniqueDef.addShaderUnmappedDefine(DEFINE_NB_SKY_LIGHT_AND_REFLECTION_PROBES, VarType.Int);
     }
 
     private void prepaLightData(int lightNum){
@@ -148,22 +156,61 @@ public final class DeferredSinglePassLightingLogic extends DefaultTechniqueDefLo
             defines.set(nbLightsDefineId, renderManager.getSinglePassLightBatchSize() * 3);
         }
         defines.set(singlePassLightingDefineId, true);
+        //TODO here we have a problem, this is called once before render, so the define will be set for all passes (in case we have more than NB_LIGHTS lights)
+        //Though the second pass should not render IBL as it is taken care of on first pass like ambient light in phong lighting.
+        //We cannot change the define between passes and the old technique, and for some reason the code fails on mac (renders nothing).
+        if(lights != null) {
+            SkyLightAndReflectionProbeRender.extractSkyLightAndReflectionProbes(lights, ambientLightColor, skyLightAndReflectionProbes, false);
+            defines.set(nbSkyLightAndReflectionProbesDefineId, skyLightAndReflectionProbes.size());
+        }
         return super.makeCurrent(assetManager, renderManager, rendererCaps, lights, defines);
     }
 
-    protected int updateLightListPackToTexture(Shader shader, Geometry g, LightList lightList, int numLights, RenderManager rm, int startIndex, boolean isLightCullStageDraw) {
+    protected int updateLightListPackToTexture(Shader shader, Geometry g, LightList lightList, int numLights, RenderManager rm, int startIndex, boolean isLightCullStageDraw, int lastTexUnit) {
         if (numLights == 0) { // this shader does not do lighting, ignore.
             return 0;
         }
 
         Uniform ambientColor = shader.getUniform("g_AmbientLightColor");
 
+//        skyLightAndReflectionProbes.clear();
         if (startIndex != 0 || isLightCullStageDraw) {
             // apply additive blending for 2nd and future passes
             rm.getRenderer().applyRenderState(ADDITIVE_LIGHT);
             ambientColor.setValue(VarType.Vector4, ColorRGBA.Black);
         } else {
+//            extractSkyLightAndReflectionProbes(lightList,true);
             ambientColor.setValue(VarType.Vector4, getAmbientColor(lightList, true, ambientLightColor));
+        }
+
+        // render skyLights and reflectionProbes
+        if(!skyLightAndReflectionProbes.isEmpty()){
+            // Matrix4f
+            Uniform skyLightData = shader.getUniform("g_SkyLightData");
+            Uniform skyLightData2 = shader.getUniform("g_SkyLightData2");
+            Uniform skyLightData3 = shader.getUniform("g_SkyLightData3");
+
+            Uniform shCoeffs = shader.getUniform("g_ShCoeffs");
+            Uniform reflectionProbePemMap = shader.getUniform("g_ReflectionEnvMap");
+            Uniform shCoeffs2 = shader.getUniform("g_ShCoeffs2");
+            Uniform reflectionProbePemMap2 = shader.getUniform("g_ReflectionEnvMap2");
+            Uniform shCoeffs3 = shader.getUniform("g_ShCoeffs3");
+            Uniform reflectionProbePemMap3 = shader.getUniform("g_ReflectionEnvMap3");
+
+            LightProbe skyLight = skyLightAndReflectionProbes.get(0);
+            lastTexUnit = SkyLightAndReflectionProbeRender.setSkyLightAndReflectionProbeData(rm, lastTexUnit, skyLightData, shCoeffs, reflectionProbePemMap, skyLight);
+            if (skyLightAndReflectionProbes.size() > 1) {
+                skyLight = skyLightAndReflectionProbes.get(1);
+                lastTexUnit = SkyLightAndReflectionProbeRender.setSkyLightAndReflectionProbeData(rm, lastTexUnit, skyLightData2, shCoeffs2, reflectionProbePemMap2, skyLight);
+            }
+            if (skyLightAndReflectionProbes.size() > 2) {
+                skyLight = skyLightAndReflectionProbes.get(2);
+                SkyLightAndReflectionProbeRender.setSkyLightAndReflectionProbeData(rm, lastTexUnit, skyLightData3, shCoeffs3, reflectionProbePemMap3, skyLight);
+            }
+        } else {
+            Uniform skyLightData = shader.getUniform("g_SkyLightData");
+            //Disable IBL for this pass
+            skyLightData.setValue(VarType.Matrix4, LightProbe.FALLBACK_MATRIX);
         }
 
         TempVars vars = TempVars.get();
@@ -377,11 +424,12 @@ public final class DeferredSinglePassLightingLogic extends DefaultTechniqueDefLo
         // todo:关于reflection probes,使用textureArray(八面体投影,带mipmap),收集相机可见范围内的reflection probes,并限制当前视锥体内只能有多少个reflection probes
         if(bUseTexturePackMode){
             Uniform lightCount = shader.getUniform("g_LightCount");
+            SkyLightAndReflectionProbeRender.extractSkyLightAndReflectionProbes(lights, ambientLightColor, skyLightAndReflectionProbes, true);
             int count = lights.size();
             lightCount.setValue(VarType.Int, count);
             while (nbRenderedLights < count) {
                 // todo:采用第二种方法优化deferred,则这里使用当前类的geometrys(rect,sphere)进行绘制,而不使用这个传递进来的geometry(或者在外部传递两个geometry,一个rect一个sphereinstance)
-                nbRenderedLights = updateLightListPackToTexture(shader, geometry, lights, count, renderManager, nbRenderedLights, isLightCullStageDraw);
+                nbRenderedLights = updateLightListPackToTexture(shader, geometry, lights, count, renderManager, nbRenderedLights, isLightCullStageDraw, lastTexUnit);
                 renderer.setShader(shader);
                 renderMeshFromGeometry(renderer, geometry);
             }

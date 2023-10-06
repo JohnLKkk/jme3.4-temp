@@ -12,7 +12,6 @@ import com.jme3.scene.Geometry;
  */
 public class ForwardPass extends FGRenderQueuePass {
     private RenderQueue.Bucket bucket;
-    protected boolean canExecute;
     public ForwardPass(String name, RenderQueue.Bucket bucket) {
         super(name);
         this.bucket = bucket;
